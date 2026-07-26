@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>ShiroBot.Discord.Model</RootNamespace>
+        <Description>Discord Gateway/REST DTOs for the ShiroBot Discord adapter.</Description>
+    </PropertyGroup>
+
+</Project>

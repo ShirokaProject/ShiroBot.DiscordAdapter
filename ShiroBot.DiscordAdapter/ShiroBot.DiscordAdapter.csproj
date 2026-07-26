@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <HostAdapterDir>..\..\ShiroBot\ShiroBot\bin\Debug\$(TargetFramework)\adapters\$(AssemblyName)\</HostAdapterDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\ShiroBot.Discord.Model\ShiroBot.Discord.Model.csproj" />
+        <ProjectReference Include="..\..\ShiroBot\ShiroBot.SDK\ShiroBot.SDK.csproj">
+            <Private>false</Private>
+        </ProjectReference>
+    </ItemGroup>
+
+    <Target Name="CopyAdapterToHost"
+            AfterTargets="Build"
+            Condition="'$(Configuration)'=='Debug'">
+        <MakeDir Directories="$(HostAdapterDir)" />
+
+        <ItemGroup>
+            <AdapterDebugOutput Include="$(TargetDir)**\*"
+                                Exclude="$(TargetDir)ShiroBot.SDK.dll;$(TargetDir)ShiroBot.SDK.pdb" />
+        </ItemGroup>
+
+        <Copy SourceFiles="@(AdapterDebugOutput)"
+              DestinationFiles="@(AdapterDebugOutput->'$(HostAdapterDir)%(RecursiveDir)%(Filename)%(Extension)')"
+              SkipUnchangedFiles="true" />
+    </Target>
+
+</Project>
