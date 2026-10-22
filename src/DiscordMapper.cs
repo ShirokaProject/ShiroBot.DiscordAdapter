@@ -7,17 +7,23 @@ using Sdk = ShiroBot.SDK.Models;
 namespace ShiroBot.DiscordAdapter;
 
 /// <summary>Discord 模型 ↔ ShiroBot 核心模型映射。</summary>
-public static partial class DiscordMapper
+public sealed partial class DiscordMapper
 {
     public const string PlatformId = "discord";
 
-    internal static string? SelfId { get; set; }
+    internal string? SelfId { get; set; }
+    internal BoundedCache<DcChannel> Channels { get; } = new();
+    internal BoundedCache<(string ChannelId, string MessageId, string Url)> Resources { get; } = new();
+    internal BoundedCache<(string ChannelId, string Url)> Uploads { get; } = new();
+
+    public static ShiroBot.Model.Discord.DiscordUser ToPlatformUser(DcUser user, string? nickname = null) => new()
+    {
+        UserId = ulong.Parse(user.Id, System.Globalization.CultureInfo.InvariantCulture),
+        Username = user.Username, GlobalName = user.GlobalName, Nickname = nickname, IsBot = user.IsBot
+    };
 
     /// <summary>已知 DM channel id 集合(Gateway 消息里 DM 无 guild_id,以此区分)。</summary>
-    internal static readonly HashSet<string> KnownDmChannels = [];
-
-    [GeneratedRegex("<@!?(\\d+)>")]
-    private static partial Regex MentionPattern();
+    internal readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> KnownDmChannels = new();
 
     // ─── Channel / User / Member ───
 
@@ -55,10 +61,18 @@ public static partial class DiscordMapper
 
     // ─── 入站消息 ───
 
-    public static MessageEvent ToMessageEvent(DcMessage message)
+    public MessageEvent ToMessageEvent(DcMessage message)
     {
         var author = message.Author ?? new DcUser { Id = "0", Username = "unknown" };
-        var isDm = message.GuildId is null && KnownDmChannels.Contains(message.ChannelId);
+        var hasKnownChannel = Channels.TryGet(message.ChannelId, out var known);
+        var isDm = hasKnownChannel ? known.IsDm : message.GuildId is null;
+        if (isDm) KnownDmChannels.TryAdd(message.ChannelId, 0);
+        foreach (var attachment in message.Attachments ?? [])
+            Resources.Set(attachment.Id, (message.ChannelId, message.Id, attachment.Url));
+        var channel = hasKnownChannel
+            ? ToChannel(known)
+            : isDm ? Sdk.Channel.Direct(message.ChannelId)
+                : new Sdk.Channel(message.ChannelId, ChannelType.Group) { GuildId = message.GuildId };
 
         return new MessageEvent
         {
@@ -66,9 +80,7 @@ public static partial class DiscordMapper
             SelfId = SelfId,
             Raw = message,
             MessageId = message.Id,
-            Channel = isDm
-                ? Sdk.Channel.Direct(author.Id) with { Id = message.ChannelId, Type = ChannelType.Direct }
-                : new Sdk.Channel(message.ChannelId, ChannelType.Group) { GuildId = message.GuildId },
+            Channel = channel,
             Sender = ToUser(author),
             Member = message.Member is null ? null : ToMember(message.Member, author),
             Segments = ToSegments(message),
@@ -102,46 +114,31 @@ public static partial class DiscordMapper
 
         foreach (var sticker in message.StickerItems ?? [])
         {
-            segments.Add(new EmojiSegment(sticker.Id) { Name = sticker.Name });
+            segments.Add(new RawSegment(PlatformId, "sticker", sticker));
         }
 
         return segments;
     }
 
-    /// <summary>把 content 中的 &lt;@id&gt; / @everyone 解析为 Mention 段。</summary>
+    [GeneratedRegex("<@!?(\\d+)>|@everyone|@here")]
+    private static partial Regex ContentTokenPattern();
+
     private static IEnumerable<MessageSegment> ParseContent(string content, DcMessage message)
     {
-        var matches = MentionPattern().Matches(content);
         var position = 0;
-
-        foreach (Match match in matches)
+        foreach (Match match in ContentTokenPattern().Matches(content))
         {
-            if (match.Index > position)
+            if (match.Index > position) yield return new TextSegment(content[position..match.Index]);
+            if (match.Groups[1].Success)
             {
-                yield return new TextSegment(content[position..match.Index]);
+                var id = match.Groups[1].Value;
+                yield return new MentionSegment(id) { DisplayName = message.Mentions?.FirstOrDefault(x => x.Id == id)?.DisplayName };
             }
-
-            var userId = match.Groups[1].Value;
-            var mentioned = message.Mentions?.FirstOrDefault(user => user.Id == userId);
-            yield return new MentionSegment(userId) { DisplayName = mentioned?.DisplayName };
+            else if (message.MentionEveryone) yield return new MentionAllSegment();
+            else yield return new TextSegment(match.Value);
             position = match.Index + match.Length;
         }
-
-        if (position < content.Length)
-        {
-            var rest = content[position..];
-            if (message.MentionEveryone && rest.Contains("@everyone"))
-            {
-                var parts = rest.Split("@everyone", 2);
-                if (parts[0].Length > 0) yield return new TextSegment(parts[0]);
-                yield return new MentionAllSegment();
-                if (parts[1].Length > 0) yield return new TextSegment(parts[1]);
-            }
-            else
-            {
-                yield return new TextSegment(rest);
-            }
-        }
+        if (position < content.Length) yield return new TextSegment(content[position..]);
     }
 
     private static MessageSegment ToSegment(DcAttachment attachment)
@@ -208,6 +205,9 @@ public static partial class DiscordMapper
                 case TextSegment text:
                     content.Append(text.Text);
                     break;
+                case MarkdownSegment markdown:
+                    content.Append(markdown.Content);
+                    break;
                 case MentionSegment mention:
                     content.Append("<@").Append(mention.UserId).Append('>');
                     break;
@@ -218,7 +218,7 @@ public static partial class DiscordMapper
                     replyTo = quote.MessageId;
                     break;
                 case EmojiSegment emoji:
-                    content.Append(emoji.Name ?? string.Empty);
+                    content.Append(ulong.TryParse(emoji.Id, out _) ? $"<:{emoji.Name?.Trim(':') ?? "emoji"}:{emoji.Id}>" : emoji.Name ?? emoji.Id);
                     break;
                 case RawSegment { Kind: "embed", Payload: DcEmbed embed }:
                     embeds.Add(embed);
@@ -231,6 +231,8 @@ public static partial class DiscordMapper
                         $"Discord 适配器暂只支持 http(s) URL 资源,实际为 '{resource.Uri}'。");
                 case RawSegment raw:
                     throw new NotSupportedException($"Discord 适配器不支持发送 RawSegment(kind={raw.Kind})。");
+                default:
+                    throw new NotSupportedException($"Discord 适配器不支持发送 {segment.GetType().Name}。");
             }
         }
 

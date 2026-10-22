@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ShiroBot.DiscordAdapter.csproj" />
+  <Project Path="TestPlugin/ShiroBot.DiscordAdapter.TestPlugin.csproj" />
+  <Project Path="ShiroBot.Discord.Model/ShiroBot.Discord.Model.csproj" />
+</Solution>

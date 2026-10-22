@@ -27,6 +27,10 @@ public sealed record DcUser
     public string? AvatarUrl => Avatar is null
         ? null
         : $"https://cdn.discordapp.com/avatars/{Id}/{Avatar}.png";
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>Discord `GuildMember`。</summary>
@@ -46,4 +50,8 @@ public sealed record DcGuildMember
 
     [JsonPropertyName("permissions")]
     public string? Permissions { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }

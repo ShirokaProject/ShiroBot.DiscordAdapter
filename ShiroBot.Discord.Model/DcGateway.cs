@@ -24,10 +24,11 @@ public static class DcIntents
     public const int GuildMessages = 1 << 9;
     public const int GuildMessageReactions = 1 << 10;
     public const int DirectMessages = 1 << 12;
+    public const int DirectMessageReactions = 1 << 13;
     public const int MessageContent = 1 << 15;
 
     public const int Default = Guilds | GuildMembers | GuildMessages | GuildMessageReactions
-                               | DirectMessages | MessageContent;
+                               | DirectMessages | DirectMessageReactions | MessageContent;
 }
 
 /// <summary>Gateway 帧:{ op, d, s, t }。</summary>
@@ -44,6 +45,10 @@ public sealed record DcGatewayPayload
 
     [JsonPropertyName("t")]
     public string? EventName { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>Hello 事件数据。</summary>
@@ -51,6 +56,10 @@ public sealed record DcHello
 {
     [JsonPropertyName("heartbeat_interval")]
     public int HeartbeatInterval { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>READY 事件数据(子集)。</summary>
@@ -67,6 +76,10 @@ public sealed record DcReady
 
     [JsonPropertyName("resume_gateway_url")]
     public string? ResumeGatewayUrl { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>GUILD_MEMBER_ADD 事件数据 = GuildMember + guild_id。</summary>
@@ -80,6 +93,10 @@ public sealed record DcGuildMemberAdd
 
     [JsonPropertyName("nick")]
     public string? Nick { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>GUILD_MEMBER_REMOVE 事件数据。</summary>
@@ -90,6 +107,10 @@ public sealed record DcGuildMemberRemove
 
     [JsonPropertyName("user")]
     public required DcUser User { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>MESSAGE_DELETE 事件数据。</summary>
@@ -103,6 +124,10 @@ public sealed record DcMessageDelete
 
     [JsonPropertyName("guild_id")]
     public string? GuildId { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>MESSAGE_REACTION_ADD / REMOVE 事件数据(子集)。</summary>
@@ -122,6 +147,10 @@ public sealed record DcMessageReaction
 
     [JsonPropertyName("emoji")]
     public required DcReactionEmoji Emoji { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 public sealed record DcReactionEmoji
@@ -131,4 +160,8 @@ public sealed record DcReactionEmoji
 
     [JsonPropertyName("name")]
     public string? Name { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }

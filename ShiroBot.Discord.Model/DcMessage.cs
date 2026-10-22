@@ -49,6 +49,10 @@ public sealed record DcMessage
 
     [JsonPropertyName("type")]
     public int Type { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>Discord `Attachment`。</summary>
@@ -77,11 +81,21 @@ public sealed record DcAttachment
 
     [JsonPropertyName("duration_secs")]
     public double? DurationSecs { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>Discord `Embed`(发送/接收共用,字段子集)。</summary>
 public sealed record DcEmbed
 {
+    [JsonPropertyName("image")]
+    public DcEmbedImage? Image { get; init; }
+
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<DcEmbedField>? Fields { get; init; }
+
     [JsonPropertyName("title")]
     public string? Title { get; init; }
 
@@ -93,6 +107,10 @@ public sealed record DcEmbed
 
     [JsonPropertyName("color")]
     public int? Color { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>回复引用。</summary>
@@ -106,6 +124,10 @@ public sealed record DcMessageReference
 
     [JsonPropertyName("guild_id")]
     public string? GuildId { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 public sealed record DcStickerItem
@@ -115,4 +137,19 @@ public sealed record DcStickerItem
 
     [JsonPropertyName("name")]
     public required string Name { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
+}
+
+public sealed record DcEmbedImage([property: JsonPropertyName("url")] string Url)
+{
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
+}
+public sealed record DcEmbedField(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("value")] string Value)
+{
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }

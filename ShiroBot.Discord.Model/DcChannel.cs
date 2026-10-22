@@ -45,6 +45,10 @@ public sealed record DcChannel
     public bool IsThread => Type is DcChannelType.AnnouncementThread
         or DcChannelType.PublicThread
         or DcChannelType.PrivateThread;
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }
 
 /// <summary>Discord `Guild`(部分字段)。</summary>
@@ -58,4 +62,8 @@ public sealed record DcGuild
 
     [JsonPropertyName("owner_id")]
     public string? OwnerId { get; init; }
+
+    /// <summary>未显式建模的平台字段，原样保留。</summary>
+    [JsonExtensionData]
+    public Dictionary<string, System.Text.Json.JsonElement>? AdditionalData { get; init; }
 }

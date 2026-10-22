@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace ShiroBot.DiscordAdapter;
 
 /// <summary>Discord REST API v10 客户端(带简单 429 重试)。</summary>
-public sealed class DiscordRestClient
+public sealed class DiscordRestClient : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -14,10 +14,11 @@ public sealed class DiscordRestClient
 
     private readonly HttpClient _http;
 
-    public DiscordRestClient(string botToken)
+    public DiscordRestClient(string botToken, HttpMessageHandler? handler = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(botToken);
-        _http = new HttpClient { BaseAddress = new Uri("https://discord.com/api/v10/") };
+        _http = handler is null ? new HttpClient() : new HttpClient(handler);
+        _http.BaseAddress = new Uri("https://discord.com/api/v10/");
         _http.DefaultRequestHeaders.Authorization = new("Bot", botToken);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("DiscordBot (https://github.com/ShirokaProject/ShiroBot, 0.1)");
     }
@@ -70,6 +71,22 @@ public sealed class DiscordRestClient
             () => new HttpRequestMessage(HttpMethod.Delete, path), cancellationToken);
     }
 
+    internal async Task<T> SendPayloadAsync<T>(HttpMethod method, string path, object payload,
+        IReadOnlyList<ResourceBytes> files, CancellationToken token)
+    {
+        using var response = await SendWithRetryAsync(() =>
+        {
+            if (files.Count == 0)
+                return new HttpRequestMessage(method, path) { Content = JsonContent.Create(payload, options: JsonOptions) };
+            var form = new MultipartFormDataContent();
+            form.Add(new StringContent(JsonSerializer.Serialize(payload, JsonOptions), System.Text.Encoding.UTF8, "application/json"), "payload_json");
+            for (var i = 0; i < files.Count; i++)
+                form.Add(new ByteArrayContent(files[i].Bytes), $"files[{i}]", files[i].FileName);
+            return new HttpRequestMessage(method, path) { Content = form };
+        }, token);
+        return await ReadAsync<T>(response, token);
+    }
+
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         Func<HttpRequestMessage> requestFactory,
         CancellationToken cancellationToken)
@@ -92,12 +109,14 @@ public sealed class DiscordRestClient
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 response.Dispose();
                 throw new HttpRequestException(
-                    $"Discord API {request.Method} {request.RequestUri} 失败: {(int)response.StatusCode} {body}");
+                    $"Discord API {request.Method} 请求失败: {(int)response.StatusCode} {body}", null, response.StatusCode);
             }
 
             return response;
         }
     }
+
+    public void Dispose() => _http.Dispose();
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken) =>
         await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)

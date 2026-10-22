@@ -13,12 +13,14 @@ public sealed class DiscordGateway(string botToken, int intents)
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private long? _lastSequence;
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
 
     /// <summary>Dispatch 事件:(事件名, data)。</summary>
     public event Func<string, JsonElement, Task>? DispatchReceived;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        _lastSequence = null;
         using var socket = new ClientWebSocket();
         await socket.ConnectAsync(
             new Uri("wss://gateway.discord.gg/?v=10&encoding=json"),
@@ -61,7 +63,8 @@ public sealed class DiscordGateway(string botToken, int intents)
                     case DcOpcode.Dispatch when payload.EventName is { } eventName:
                         if (DispatchReceived is { } handler)
                         {
-                            await handler(eventName, payload.Data);
+                            foreach (var subscriber in handler.GetInvocationList().Cast<Func<string, JsonElement, Task>>())
+                                await subscriber(eventName, payload.Data);
                         }
 
                         break;
@@ -102,10 +105,12 @@ public sealed class DiscordGateway(string botToken, int intents)
         }
     }
 
-    private static async Task SendAsync(ClientWebSocket socket, object payload, CancellationToken cancellationToken)
+    private async Task SendAsync(ClientWebSocket socket, object payload, CancellationToken cancellationToken)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+        await _sendGate.WaitAsync(cancellationToken);
+        try { await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, cancellationToken); }
+        finally { _sendGate.Release(); }
     }
 
     private static async Task<DcGatewayPayload?> ReceiveAsync(ClientWebSocket socket, CancellationToken cancellationToken)

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>0.3.0</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Debug keeps the designer entry point and dependencies for AXAML preview. -->
+    <ShiroBotAvaloniaPreviewerSupport Condition="'$(Configuration)' == 'Debug'">true</ShiroBotAvaloniaPreviewerSupport>
+    <ShiroBotPluginPackagingEnabled Condition="'$(Configuration)' == 'Release'">true</ShiroBotPluginPackagingEnabled>
+    <!-- All bundled Models are host-provided, including ones this component does not use. -->
+    <ShiroBotPluginSharedAssemblies>ShiroBot.Model.QQ;ShiroBot.Model.Discord;ShiroBot.Model.Telegram</ShiroBotPluginSharedAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ShiroBot.SDK" />
+    <Compile Remove="scripts/**/*.cs" />
+    <Compile Remove="Tests/**/*.cs" />
+    <Compile Remove="ShiroBot.Discord.Model/**/*.cs" />
+    <ProjectReference Include="ShiroBot.Discord.Model/ShiroBot.Discord.Model.csproj" />
+    <Compile Remove="TestPlugin/**/*.cs" />
+    <!-- Build the test plugin for local development without linking it into the adapter. -->
+    <ProjectReference Include="TestPlugin/ShiroBot.DiscordAdapter.TestPlugin.csproj"
+                      Condition="'$(Configuration)' == 'Debug'"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+</Project>
