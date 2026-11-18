@@ -1,5 +1,7 @@
 using System.Text.Json;
 using ShiroBot.Discord.Model;
+using ShiroBot.Model.Discord;
+using static ShiroBot.DiscordAdapter.DiscordModelConverter;
 using ShiroBot.SDK.Adapter;
 using ShiroBot.SDK.Models;
 
@@ -61,14 +63,16 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
             var user = userData.Deserialize<DcUser>(JsonOptions)!;
             var custom = data.TryGetProperty("data", out var payload) ? String(payload, "custom_id") : null;
             var decoded = custom is null ? ((string?)null, (string?)null) : ButtonCodec.Decode(custom);
+            var automatic = service?.AutoAcknowledge == true
+                && !(data.TryGetProperty("type", out var interactionType) && interactionType.GetInt32() == 4);
             await PublishAsync(new InteractionEvent
             {
-                Platform = DiscordMapper.PlatformId, SelfId = mapper.SelfId, Raw = data.Clone(),
+                Platform = DiscordMapper.PlatformId, SelfId = mapper.SelfId, Raw = Interaction(data),
                 Kind = custom is null ? "application_command" : "component_interaction", Channel = channel,
                 InteractionId = String(data, "id")!, User = DiscordMapper.ToUser(user), ButtonId = decoded.Item1, Data = decoded.Item2,
                 MessageId = data.TryGetProperty("message", out var message) ? String(message, "id") : null,
-                Acknowledgement = service is null ? InteractionAcknowledgement.Pending : InteractionAcknowledgement.Acknowledged,
-                IsAutomaticallyAcknowledged = service is not null, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15)
+                Acknowledgement = automatic ? InteractionAcknowledgement.Acknowledged : InteractionAcknowledgement.Pending,
+                IsAutomaticallyAcknowledged = automatic, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15)
             });
             return;
         }
@@ -76,17 +80,92 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
         if (botEvent is not null) await PublishAsync(botEvent);
     }
 
+    /// <summary>DiscordEventKinds 中列出的事件转换为 Model 负载，其他事件保留原始 JSON。</summary>
+    private object Payload(string kind, JsonElement data, Channel? channel)
+    {
+        var guildId = OptionalId(data, "guild_id");
+        ulong Guild() => guildId ?? throw new JsonException("事件缺少 guild_id。");
+        return kind switch
+        {
+            DiscordEventKinds.MessageEdited when data.TryGetProperty("id", out _) && channel is not null => new DiscordMessageEdited
+            {
+                GuildId = guildId, Json = data, Channel = channel, MessageId = String(data, "id")!, Message = Message(data),
+                Segments = DiscordMapper.ToSegments(data.Deserialize<DcMessage>(JsonOptions)!)
+            },
+            DiscordEventKinds.GuildCreate => new DiscordGuildAvailable
+            {
+                GuildId = OptionalId(data, "id"), Json = data, Guild = DiscordModelConverter.Guild(data),
+                JoinedAt = DateTimeOffset.TryParse(String(data, "joined_at"), out var joined) ? joined : null,
+                MemberCount = data.TryGetProperty("member_count", out var count) && count.TryGetInt32(out var members) ? members : 0,
+                Channels = Items(data, "channels").Select(c => DiscordModelConverter.Channel(c, OptionalId(data, "id"))).ToArray(),
+                Roles = Items(data, "roles").Select(Role).ToArray()
+            },
+            DiscordEventKinds.GuildDelete => new DiscordGuildUnavailable
+            {
+                GuildId = OptionalId(data, "id"), Json = data,
+                IsOutage = data.TryGetProperty("unavailable", out var unavailable) && unavailable.ValueKind == JsonValueKind.True
+            },
+            DiscordEventKinds.ChannelCreate or DiscordEventKinds.ChannelUpdate or DiscordEventKinds.ChannelDelete
+                or DiscordEventKinds.ThreadCreate or DiscordEventKinds.ThreadUpdate or DiscordEventKinds.ThreadDelete =>
+                new DiscordChannelChanged { GuildId = guildId, Json = data, Channel = DiscordModelConverter.Channel(data) },
+            DiscordEventKinds.GuildMemberUpdate => new DiscordMemberUpdated { GuildId = guildId, Json = data, Member = Member(data, Guild()) },
+            DiscordEventKinds.GuildRoleCreate or DiscordEventKinds.GuildRoleUpdate => new DiscordRoleChanged
+            {
+                GuildId = guildId, Json = data, RoleId = Id(data.GetProperty("role"), "id"), Role = Role(data.GetProperty("role"))
+            },
+            DiscordEventKinds.GuildRoleDelete => new DiscordRoleChanged { GuildId = guildId, Json = data, RoleId = Id(data, "role_id") },
+            DiscordEventKinds.GuildBanAdd or DiscordEventKinds.GuildBanRemove =>
+                new DiscordBanChanged { GuildId = guildId, Json = data, User = User(data.GetProperty("user")) },
+            DiscordEventKinds.VoiceStateUpdate => new DiscordVoiceStateUpdated
+            {
+                GuildId = guildId, Json = data, UserId = Id(data, "user_id"), ChannelId = OptionalId(data, "channel_id"),
+                Member = guildId is { } voiceGuild && data.TryGetProperty("member", out var voiceMember) ? Member(voiceMember, voiceGuild) : null,
+                IsMuted = Flag(data, "mute"), IsDeafened = Flag(data, "deaf"), IsSelfMuted = Flag(data, "self_mute"),
+                IsSelfDeafened = Flag(data, "self_deaf"), IsStreaming = Flag(data, "self_stream"), IsVideoOn = Flag(data, "self_video")
+            },
+            DiscordEventKinds.TypingStart => new DiscordTypingStarted
+            {
+                GuildId = guildId, Json = data, ChannelId = Id(data, "channel_id"), UserId = Id(data, "user_id"),
+                Timestamp = data.TryGetProperty("timestamp", out var at) ? DateTimeOffset.FromUnixTimeSeconds(at.GetInt64()) : default
+            },
+            DiscordEventKinds.MessageReactionRemoveAll or DiscordEventKinds.MessageReactionRemoveEmoji => new DiscordReactionsCleared
+            {
+                GuildId = guildId, Json = data, ChannelId = Id(data, "channel_id"), MessageId = Id(data, "message_id"),
+                Emoji = data.TryGetProperty("emoji", out var emoji)
+                    ? String(emoji, "id") is { } emojiId ? String(emoji, "name") + ":" + emojiId : String(emoji, "name") : null
+            },
+            DiscordEventKinds.MessagePollVoteAdd or DiscordEventKinds.MessagePollVoteRemove => new DiscordPollVote
+            {
+                GuildId = guildId, Json = data, UserId = Id(data, "user_id"), ChannelId = Id(data, "channel_id"),
+                MessageId = Id(data, "message_id"), AnswerId = data.GetProperty("answer_id").GetInt32(),
+                IsAdded = kind == DiscordEventKinds.MessagePollVoteAdd
+            },
+            DiscordEventKinds.InviteCreate => new DiscordInviteChanged
+                { GuildId = guildId, Json = data, Code = String(data, "code")!, ChannelId = Id(data, "channel_id"), Invite = Invite(data) },
+            DiscordEventKinds.InviteDelete => new DiscordInviteChanged
+                { GuildId = guildId, Json = data, Code = String(data, "code")!, ChannelId = Id(data, "channel_id") },
+            _ => data
+        };
+    }
+
+    private static bool Flag(JsonElement data, string name) =>
+        data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static IEnumerable<JsonElement> Items(JsonElement data, string name) =>
+        data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array ? value.EnumerateArray() : [];
+
     private BotEvent? Map(string eventName, JsonElement data)
     {
         switch (eventName)
         {
             case "READY":
                 mapper.SelfId = data.Deserialize<DcReady>(JsonOptions)!.User.Id;
+                if (data.TryGetProperty("application", out var application)) mapper.ApplicationId = String(application, "id");
                 return null;
             case "MESSAGE_CREATE":
             {
                 var message = data.Deserialize<DcMessage>(JsonOptions)!;
-                return message.Author?.Id == mapper.SelfId ? null : mapper.ToMessageEvent(message);
+                return message.Author?.Id == mapper.SelfId ? null : mapper.ToMessageEvent(message, data.Clone());
             }
             case "MESSAGE_DELETE":
             {
@@ -122,9 +201,14 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
                 };
             }
             default:
-                return new PlatformEvent { Platform = DiscordMapper.PlatformId, SelfId = mapper.SelfId,
-                    Kind = eventName == "MESSAGE_UPDATE" ? "message_edited" : eventName.ToLowerInvariant(), Raw = data.Clone(),
-                    Channel = String(data, "channel_id") is { } id ? Channel(id, String(data, "guild_id")) : null };
+            {
+                var kind = eventName == "MESSAGE_UPDATE" ? DiscordEventKinds.MessageEdited : eventName.ToLowerInvariant();
+                var channel = String(data, "channel_id") is { } id ? Channel(id, String(data, "guild_id"))
+                    : eventName.StartsWith("CHANNEL_", StringComparison.Ordinal) || eventName.StartsWith("THREAD_", StringComparison.Ordinal)
+                        ? Channel(String(data, "id")!, String(data, "guild_id")) : null;
+                return new PlatformEvent { Platform = DiscordMapper.PlatformId, SelfId = mapper.SelfId, Kind = kind,
+                    Raw = Payload(kind, data.Clone(), channel), Channel = channel };
+            }
         }
     }
 }

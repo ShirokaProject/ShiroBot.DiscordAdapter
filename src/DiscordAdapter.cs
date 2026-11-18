@@ -5,13 +5,14 @@ using ShiroBot.SDK.Config;
 using ShiroBot.SDK.Core;
 using ShiroBot.SDK.Plugin;
 
-[assembly: RequiresShiroBotPackage("shirobot.model.discord", MinimumVersion = "0.9.4")]
+[assembly: RequiresShiroBotPackage("shirobot.model.discord", MinimumVersion = "1.0.4")]
 
 namespace ShiroBot.DiscordAdapter;
 
-[BotAdapter("discord", Name = "DiscordAdapter", Version = "0.3.0", Author = "ShirokaProject",
+[BotAdapter("discord", Name = "DiscordAdapter", Version = "0.4.0", Author = "ShirokaProject",
     Description = "Discord Gateway/REST adapter for ShiroBot", Protocol = "discord-gateway-v10")]
-public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigurableComponent<DiscordAdapterConfig>
+public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigurableComponent<DiscordAdapterConfig>,
+    ILifetimeAwareAdapter
 {
     private readonly DiscordMapper _mapper = new();
     private readonly DiscordEventService _events;
@@ -19,6 +20,7 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
     private DiscordGateway? _gateway;
     private DiscordInteractionService? _interactions;
     private DiscordReactionService? _reactions;
+    private DiscordModelApi? _model;
     private CancellationTokenSource? _gatewayTokenSource;
     private Task? _gatewayTask;
     private IMessageService? _message;
@@ -34,6 +36,9 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
     public IEventService Event => _events;
     public IConfigContext Config { get; set; } = null!;
     public IConsoleLogger Logger { get; set; } = null!;
+
+    /// <summary>宿主在每次启动前注入；为空时（如测试中直接构造）适配器自行管理 Gateway 任务。</summary>
+    public IPluginLifetime Lifetime { get; set; } = null!;
     public DiscordAdapterConfig CurrentConfigValue { get; private set; } = new();
     ConfigApplyMode IConfigurableAdapter.ApplyMode => ConfigApplyMode.RestartComponent;
 
@@ -49,7 +54,7 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
         return Task.CompletedTask;
     }
 
-    public TService? GetExtension<TService>() where TService : class => this as TService ?? _rest as TService ?? _message as TService ?? _user as TService ?? _interactions as TService ?? _reactions as TService;
+    public TService? GetExtension<TService>() where TService : class => this as TService ?? _rest as TService ?? _message as TService ?? _user as TService ?? _interactions as TService ?? _reactions as TService ?? _model as TService;
 
     public async Task StartAsync()
     {
@@ -62,7 +67,8 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
         try
         {
             _rest = new DiscordRestClient(config.BotToken);
-            _interactions = new DiscordInteractionService(_rest);
+            _interactions = new DiscordInteractionService(_rest, config.AutoAcknowledgeInteractions);
+            _model = new DiscordModelApi(_rest, _mapper, _interactions, () => _gateway);
             _reactions = new DiscordReactionService(_rest);
             _message = new DiscordMessageService(_rest, _mapper, _interactions);
             _channel = new DiscordChannelService(_rest, _mapper);
@@ -73,8 +79,15 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
             var gateway = new DiscordGateway(config.BotToken, config.Intents ?? DcIntents.Default);
             _gateway = gateway;
             _events.Attach(gateway);
-            _gatewayTokenSource = new CancellationTokenSource();
-            _gatewayTask = RunGatewayLoopAsync(gateway, _gatewayTokenSource.Token);
+            IPluginLifetime? lifetime = Lifetime;
+            _gatewayTokenSource = lifetime is null
+                ? new CancellationTokenSource()
+                : CancellationTokenSource.CreateLinkedTokenSource(lifetime.Stopping);
+            var token = _gatewayTokenSource.Token;
+            // 交给宿主生命周期登记后，停止或热重载时宿主也会等待 Gateway 结束。
+            _gatewayTask = lifetime is null
+                ? RunGatewayLoopAsync(gateway, token)
+                : lifetime.Run(_ => RunGatewayLoopAsync(gateway, token));
         }
         catch
         {
@@ -93,6 +106,8 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
         finally
         {
             if (_gateway is not null) _events.Detach(_gateway);
+            _model?.Detach();
+            _model = null;
             _gatewayTokenSource?.Dispose();
             _rest?.Dispose();
             _gatewayTokenSource = null;
@@ -161,4 +176,8 @@ public sealed class DiscordAdapterConfig
     [ConfigField("Gateway intents 位标志；留空使用默认值。需在 Discord Developer Portal 开启 Server Members 和 Message Content intents。",
         Label = "Gateway Intents", Group = "connection", Min = 0, Order = 20)]
     public int? Intents { get; set; }
+
+    [ConfigField("收到交互立即发送延迟回复。关闭后由插件在 3 秒内回复，可使用临时可见回复、弹窗、自动补全和直接更新组件消息。",
+        Label = "自动确认交互", Group = "behavior", GroupLabel = "行为", Order = 30)]
+    public bool AutoAcknowledgeInteractions { get; set; } = true;
 }

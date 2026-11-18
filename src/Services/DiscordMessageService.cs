@@ -50,6 +50,8 @@ public sealed class DiscordMessageService(DiscordRestClient rest, DiscordMapper 
                         Image = card.ImageUrl is null ? null : new(card.ImageUrl), Fields = card.Fields.Select(f => new DcEmbedField(f.Name, f.Value)).ToArray() });
                     break;
                 case RawSegment { Platform: DiscordMapper.PlatformId, Kind: "embed", Payload: DcEmbed embed }: embeds.Add(embed); break;
+                case RawSegment { Platform: DiscordMapper.PlatformId, Kind: "embed", Payload: ShiroBot.Model.Discord.DiscordEmbed shared }:
+                    embeds.Add(DiscordModelConverter.EmbedJson(shared).Deserialize<DcEmbed>()!); break;
                 case RawSegment { Platform: DiscordMapper.PlatformId, Kind: "embed", Payload: JsonElement raw }:
                     embeds.Add(raw.Deserialize<DcEmbed>() ?? throw new ArgumentException("Embed 不能为空。")); break;
                 case RawSegment { Platform: DiscordMapper.PlatformId, Kind: "sticker", Payload: DcStickerItem sticker }:

@@ -31,6 +31,11 @@ public sealed class DiscordGateway(string botToken, int intents)
     /// <summary>Dispatch 事件:(事件名, data)。</summary>
     public event Func<string, JsonElement, Task>? DispatchReceived;
 
+    /// <summary>在线状态（op 3 的 d）；Identify 时一并发送，重新登录后保持。</summary>
+    public JsonNode? Presence { get; set; }
+
+    public bool IsConnected => _socket is not null;
+
     /// <summary>当前会话可以 Resume。</summary>
     public bool CanResume => _sessionId is not null && _lastSequence is not null;
 
@@ -154,17 +159,18 @@ public sealed class DiscordGateway(string botToken, int intents)
         }
     }
 
-    private Task IdentifyAsync(ClientWebSocket socket, CancellationToken cancellationToken) =>
-        SendRawAsync(socket, new
+    private Task IdentifyAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    {
+        var identify = new JsonObject
         {
-            op = DcOpcode.Identify,
-            d = new
-            {
-                token = botToken,
-                intents,
-                properties = new { os = Environment.OSVersion.Platform.ToString(), browser = "shirobot", device = "shirobot" }
-            }
-        }, cancellationToken);
+            ["token"] = botToken,
+            ["intents"] = intents,
+            ["properties"] = new JsonObject
+                { ["os"] = Environment.OSVersion.Platform.ToString(), ["browser"] = "shirobot", ["device"] = "shirobot" }
+        };
+        if (Presence is { } presence) identify["presence"] = presence.DeepClone();
+        return SendRawAsync(socket, new JsonObject { ["op"] = DcOpcode.Identify, ["d"] = identify }, cancellationToken);
+    }
 
     private Task ResumeAsync(ClientWebSocket socket, CancellationToken cancellationToken) =>
         SendRawAsync(socket, new

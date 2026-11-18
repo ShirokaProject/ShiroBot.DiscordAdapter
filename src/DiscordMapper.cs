@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ShiroBot.Discord.Model;
 using ShiroBot.SDK.Models;
@@ -12,6 +13,7 @@ public sealed partial class DiscordMapper
     public const string PlatformId = "discord";
 
     internal string? SelfId { get; set; }
+    internal string? ApplicationId { get; set; }
     internal BoundedCache<DcChannel> Channels { get; } = new();
     internal BoundedCache<(string ChannelId, string MessageId, string Url)> Resources { get; } = new();
     internal BoundedCache<(string ChannelId, string Url)> Uploads { get; } = new();
@@ -61,7 +63,8 @@ public sealed partial class DiscordMapper
 
     // ─── 入站消息 ───
 
-    public MessageEvent ToMessageEvent(DcMessage message)
+    /// <param name="json">原始 Message；提供时 Raw 使用它，否则由 DTO 重建。</param>
+    public MessageEvent ToMessageEvent(DcMessage message, JsonElement? json = null)
     {
         var author = message.Author ?? new DcUser { Id = "0", Username = "unknown" };
         var hasKnownChannel = Channels.TryGet(message.ChannelId, out var known);
@@ -78,7 +81,7 @@ public sealed partial class DiscordMapper
         {
             Platform = PlatformId,
             SelfId = SelfId,
-            Raw = message,
+            Raw = DiscordModelConverter.Message(json ?? JsonSerializer.SerializeToElement(message)),
             MessageId = message.Id,
             Channel = channel,
             Sender = ToUser(author),
@@ -108,14 +111,23 @@ public sealed partial class DiscordMapper
         }
 
         foreach (var embed in message.Embeds ?? [])
-        {
-            segments.Add(new RawSegment(PlatformId, "embed", embed));
-        }
+            segments.Add(new RawSegment(PlatformId, ShiroBot.Model.Discord.DiscordSegmentKinds.Embed,
+                DiscordModelConverter.Embed(JsonSerializer.SerializeToElement(embed))));
 
         foreach (var sticker in message.StickerItems ?? [])
         {
-            segments.Add(new RawSegment(PlatformId, "sticker", sticker));
+            var json = JsonSerializer.SerializeToElement(sticker);
+            segments.Add(new RawSegment(PlatformId, ShiroBot.Model.Discord.DiscordSegmentKinds.Sticker,
+                new ShiroBot.Model.Discord.DiscordSticker(DiscordModelConverter.Id(json, "id"), sticker.Name,
+                    (ShiroBot.Model.Discord.DiscordStickerFormat)(json.TryGetProperty("format_type", out var format) ? format.GetInt32() : 1))));
         }
+
+        if (message.AdditionalData?.TryGetValue("poll", out var poll) == true && poll.ValueKind == JsonValueKind.Object)
+            segments.Add(new RawSegment(PlatformId, ShiroBot.Model.Discord.DiscordSegmentKinds.Poll, DiscordModelConverter.Poll(poll)));
+        if (message.AdditionalData?.TryGetValue("components", out var components) == true
+            && components.ValueKind == JsonValueKind.Array && components.GetArrayLength() > 0)
+            segments.Add(new RawSegment(PlatformId, ShiroBot.Model.Discord.DiscordSegmentKinds.Components,
+                new ShiroBot.Model.Discord.DiscordComponents(components.Clone())));
 
         return segments;
     }

@@ -1,8 +1,8 @@
 # Discord 适配器覆盖清单
 
-版本 `0.3.0`，SDK `1.0.1`。以下清单同时列出两个平台的语义差异。
+版本 `0.4.0`，SDK `1.0.4`（Discord Model 1.1）。以下清单同时列出两个平台的语义差异。
 
-## SDK API 清单（1.0.1）
+## SDK API 清单（1.0.4）
 
 所有方法均由适配器显式声明实现，回归测试使用接口映射检查，防止意外调用 SDK 默认实现。
 “不支持”项会抛出带平台原因的 `NotSupportedException`，不会返回伪造成功或不完整列表。
@@ -75,6 +75,25 @@
 
 按钮回调将 ID 与 Data 一起编码，长度校验按编码后的实际字节计算。不会截断回调数据。
 交互令牌和上传句柄缓存有容量限制，实例停止后释放；不能跨实例复用。
+
+## Discord Model 1.1 清单
+
+| 接口 / 契约 | 实现 |
+| --- | --- |
+| IDiscordGuildApi | GET guilds/{id}、users/@me/guilds（分页）、guilds/{id}/channels；频道 POST/PATCH/DELETE 与 permissions 覆盖；roles 增删改；members 查询与 search；成员角色 PUT/DELETE；昵称（含 @me 与清除）；communication_disabled_until 超时（最长 28 天）；移出；bans（分页）；invites；emojis；threads（独立或从消息创建）与 thread-members |
+| IDiscordMessageApi | messages POST/PATCH（multipart 附件、编辑保留已有附件）、crosspost、messages/pins（分页）、bulk-delete、typing、reactions 用户与清除、polls expire 与 answers |
+| IDiscordInteractionApi | callback type 4/5/6/7/8/9、webhooks @original PATCH/DELETE 与 follow-up；applications/{app}/(guilds/{guild}/)commands GET/PUT/POST/DELETE |
+| IDiscordBotApi | users/@me、users/{id}、Gateway op 3 在线状态（随 Identify 重发）、PATCH users/@me（头像转 data URI） |
+| IDiscordRawApi | 任意路由 + multipart + X-Audit-Log-Reason，Gateway 指令，原始 Dispatch |
+| MessageEvent.Raw | `DiscordMessage`：作者与成员、编辑时间、类型、标志、置顶、Webhook、交互用户、提及角色、子区、原始 JSON |
+| InteractionEvent.Raw | `DiscordInteraction`：命令名/类型/选项（含子命令与 focused）、目标 ID、custom_id、下拉值、弹窗输入（ActionRow 与 Label 组件）、语言、应用权限；移除交互令牌 |
+| RawSegment | embed → `DiscordEmbed`、sticker → `DiscordSticker`、poll → `DiscordPoll`、components → `DiscordComponents` |
+| PlatformEvent | message_edited、guild_create/delete、channel_*、thread_*、guild_member_update、guild_role_*、guild_ban_*、voice_state_update、typing_start、message_reaction_remove_all/emoji、message_poll_vote_*、invite_* 使用 Model 负载；其他事件为 `JsonElement` |
+
+## Gateway
+
+Resume（session_id、resume_gateway_url、序号跨连接保留）；op 7 重连保留会话；op 9 按 d 决定是否可恢复并等待 1–5 秒；
+心跳缺 ACK 判定僵死；4007/4009 重新 Identify；4004、4010–4014 停止重连。默认 Intents 覆盖除在线状态和输入状态外的全部事件。
 
 ## 验证
 

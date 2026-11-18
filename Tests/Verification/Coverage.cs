@@ -53,7 +53,8 @@ internal static class Coverage
         await Emit("MESSAGE_CREATE", """{"id":"1","channel_id":"100","guild_id":"200","timestamp":"2026-01-01T00:00:00Z","author":{"id":"7","username":"user"},"content":"@everyone hello <@7> @here","mention_everyone":true,"attachments":[{"id":"8","url":"https://example.org/old","filename":"a.png","content_type":"image/png"}],"future_field":true}""");
         var incoming = (MessageEvent)received.Last();
         Check(incoming.Channel.Type == ChannelType.Thread && incoming.Segments.OfType<MentionAllSegment>().Count() == 2, "Thread or mentions not mapped.");
-        Check(((DcMessage)incoming.Raw!).AdditionalData!["future_field"].GetBoolean(), "Unknown fields lost.");
+        Check(incoming.Raw is ShiroBot.Model.Discord.DiscordMessage { MessageId: 1, GuildId: 200 } native
+              && native.Json.GetProperty("future_field").GetBoolean(), "Unknown fields lost."); 
         Check(await messages.GetResourceUrlAsync("8") == "https://example.org/new", "Attachment ID not resolved/refreshed.");
         Check((await users.GetDiscordUserAsync("7")).GlobalName == "Global", "Shared user Model lost fields.");
         Check((await users.GetDiscordMemberAsync("100", "7")).Nickname == "Nick", "Shared member Model lost nickname.");

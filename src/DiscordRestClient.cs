@@ -87,6 +87,38 @@ public sealed class DiscordRestClient : IDisposable
         return await ReadAsync<T>(response, token);
     }
 
+    /// <summary>
+    ///     调用任意 REST 路由并返回响应 JSON；204 时为 Undefined。有文件时以 multipart 发送，body 作为 payload_json。
+    ///     <paramref name="reason"/> 写入审计日志（X-Audit-Log-Reason）。
+    /// </summary>
+    internal async Task<JsonElement> SendAsync(HttpMethod method, string path, System.Text.Json.Nodes.JsonNode? body = null,
+        IReadOnlyList<ResourceBytes>? files = null, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var json = body?.ToJsonString();
+        using var response = await SendWithRetryAsync(() =>
+        {
+            var request = new HttpRequestMessage(method, path.TrimStart('/'));
+            if (files is { Count: > 0 })
+            {
+                var form = new MultipartFormDataContent();
+                if (json is not null) form.Add(new StringContent(json, System.Text.Encoding.UTF8, "application/json"), "payload_json");
+                for (var i = 0; i < files.Count; i++)
+                    form.Add(new ByteArrayContent(files[i].Bytes), $"files[{i}]", files[i].FileName);
+                request.Content = form;
+            }
+            else if (json is not null)
+                request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            if (!string.IsNullOrWhiteSpace(reason))
+                request.Headers.TryAddWithoutValidation("X-Audit-Log-Reason", Uri.EscapeDataString(reason));
+            return request;
+        }, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NoContent || response.Content.Headers.ContentLength == 0) return default;
+        var text = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(text) ? default : JsonDocument.Parse(text).RootElement.Clone();
+    }
+
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         Func<HttpRequestMessage> requestFactory,
         CancellationToken cancellationToken)
