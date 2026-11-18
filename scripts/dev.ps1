@@ -11,10 +11,16 @@ $sdkVersion = @($packages.Project.ItemGroup.PackageVersion | Where-Object { $_.I
 if (-not $sdkVersion) { throw 'Cannot read ShiroBot.SDK version from Directory.Packages.props.' }
 
 $architecture = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
-$rid = "win-$architecture"
+# Windows PowerShell 5.1 has no $IsWindows/$IsMacOS/$IsLinux and only runs on Windows.
+$onWindows = $PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows
+$platform = if ($onWindows) { 'win' }
+    elseif ($IsMacOS) { 'osx' }
+    elseif ($IsLinux) { if (Test-Path '/etc/alpine-release') { 'linux-musl' } else { 'linux' } }
+    else { throw 'Unsupported operating system.' }
+$rid = "$platform-$architecture"
 # The host directory is not versioned: config.toml, plugins/ and adapters/ survive SDK upgrades.
 $cacheDir = Join-Path $projectRoot ".shirobot-dev/host/$rid"
-$hostExe = Join-Path $cacheDir 'ShiroBot.exe'
+$hostExe = Join-Path $cacheDir $(if ($onWindows) { 'ShiroBot.exe' } else { 'ShiroBot' })
 $versionFile = Join-Path $cacheDir '.host-version'
 $archiveName = "shirobot-host-$rid-framework-dependent.zip"
 $archive = Join-Path $cacheDir $archiveName
@@ -33,11 +39,13 @@ if (-not (Test-Path $hostExe) -or $installedVersion -ne $sdkVersion) {
     # The archive only contains the host executable, so the existing local data is kept.
     Expand-Archive -Path $archive -DestinationPath $cacheDir -Force
     Remove-Item $archive
+    # Expand-Archive does not keep the Unix executable bit.
+    if (-not $onWindows) { chmod +x $hostExe }
     Set-Content -Path $versionFile -Value $sdkVersion -Encoding ASCII
 }
 
 $adapterDir = Join-Path $cacheDir 'adapters/ShiroBot.DiscordAdapter'
-$buildDir = (Resolve-Path 'bin/Debug/net10.0').Path
+$buildDir = (Resolve-Path 'bin/Debug/net11.0').Path
 $manifest = Join-Path $adapterDir '.shirobot-dev-files'
 New-Item -ItemType Directory -Force $adapterDir | Out-Null
 # Remove files copied by the previous run that the build no longer produces. Files the
@@ -59,7 +67,7 @@ Get-ChildItem -LiteralPath $buildDir -Recurse -File | Where-Object { $_.Name -ne
 # The host discovers the adapter entry from DLL metadata; no package-local manifest is needed.
 
 $pluginDir = Join-Path $cacheDir 'plugins/ShiroBot.DiscordAdapter.TestPlugin'
-$buildDir = (Resolve-Path 'TestPlugin/bin/Debug/net10.0').Path
+$buildDir = (Resolve-Path 'TestPlugin/bin/Debug/net11.0').Path
 $manifest = Join-Path $pluginDir '.shirobot-dev-files'
 New-Item -ItemType Directory -Force $pluginDir | Out-Null
 # Remove files copied by the previous run that the build no longer produces. Files the

@@ -1,8 +1,6 @@
 using ShiroBot.SDK.Core;
 using ShiroBot.SDK.Plugin;
 
-[assembly: ShiroBotApiCompatibility("1.0", "1.0")]
-
 namespace ShiroBot.DiscordAdapter.TestPlugin;
 
 [BotPlugin("ShiroBot.DiscordAdapter.TestPlugin", Name = "Adapter test plugin", Version = "1.0.0", Author = "ShirokaProject")]

@@ -5,6 +5,12 @@
       "executablePath": "$(MSBuildProjectDirectory)/.shirobot-dev/host/$(NETCoreSdkRuntimeIdentifier)/ShiroBot",
       "commandLineArgs": "",
       "workingDirectory": "$(MSBuildProjectDirectory)/.shirobot-dev/host/$(NETCoreSdkRuntimeIdentifier)"
+    },
+    "ShiroBot (Windows)": {
+      "commandName": "Executable",
+      "executablePath": "$(MSBuildProjectDirectory)/.shirobot-dev/host/$(NETCoreSdkRuntimeIdentifier)/ShiroBot.exe",
+      "commandLineArgs": "",
+      "workingDirectory": "$(MSBuildProjectDirectory)/.shirobot-dev/host/$(NETCoreSdkRuntimeIdentifier)"
     }
   }
 }

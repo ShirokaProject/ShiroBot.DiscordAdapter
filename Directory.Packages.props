@@ -3,6 +3,6 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="ShiroBot.SDK" Version="1.0.1" />
+    <PackageVersion Include="ShiroBot.SDK" Version="1.0.3" />
   </ItemGroup>
 </Project>
