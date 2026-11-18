@@ -67,4 +67,5 @@ Check(((IConfigurableAdapter)adapter).ApplyMode == ConfigApplyMode.RestartCompon
 await adapter.StopAsync();
 await adapter.StopAsync();
 await Coverage.RunAsync();
+await GatewayCoverage.RunAsync();
 Console.WriteLine("Verified SDK dispatch/cancellation, capabilities, event ordering, instance isolation and configuration lifecycle.");

@@ -121,17 +121,30 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
                 await gateway.RunAsync(token);
                 if (!token.IsCancellationRequested)
                 {
-                    Logger.Warning("Discord Gateway 连接已断开，准备重连。");
-                    await _events.PublishAsync(new ShiroBot.SDK.Models.BotOfflineEvent { Platform = Platform, SelfId = _mapper.SelfId, Reason = "Gateway disconnected" });
+                    // 可以 Resume 时事件会补发，机器人不算离线。
+                    if (gateway.CanResume) Logger.Info("Discord Gateway 连接已断开，正在恢复会话。");
+                    else
+                    {
+                        Logger.Warning("Discord Gateway 会话已失效，准备重新登录。");
+                        await _events.PublishAsync(new ShiroBot.SDK.Models.BotOfflineEvent { Platform = Platform, SelfId = _mapper.SelfId, Reason = "Gateway disconnected" });
+                    }
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
+            catch (DiscordGatewayFatalException ex)
+            {
+                // Token 或 Intents 配置错误，重连只会被再次拒绝。
+                Logger.Error(ex.Message + " 已停止重连，修正配置后重启实例。");
+                await _events.PublishAsync(new ShiroBot.SDK.Models.BotOfflineEvent { Platform = Platform, SelfId = _mapper.SelfId, Reason = "gateway_" + ex.CloseCode });
+                break;
+            }
             catch (Exception ex)
             {
                 Logger.Error($"Discord Gateway 异常: {ex.GetType().Name}: {ex.Message}");
                 await _events.PublishAsync(new ShiroBot.SDK.Models.BotOfflineEvent { Platform = Platform, SelfId = _mapper.SelfId, Reason = ex.GetType().Name });
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(5), token); }
+            // 可以 Resume 时立即重连，避免丢失事件；否则等待后重新 Identify。
+            try { await Task.Delay(gateway.CanResume ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(5), token); }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
         }
     }
