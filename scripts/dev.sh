@@ -53,7 +53,19 @@ if [ ! -f "$host_exe" ] || [ "$installed_version" != "$sdk_version" ]; then
   printf '%s\n' "$sdk_version" > "$version_file"
 fi
 
-adapter_dir="$cache_dir/adapters/ShiroBot.DiscordAdapter"
+# The host recognizes a package only when its directory name equals the BotAdapter ID.
+adapter_id=discord
+adapter_dir="$cache_dir/adapters/$adapter_id"
+# Earlier scripts installed under the project name, which the host does not recognize as a package.
+legacy_dir="$cache_dir/adapters/ShiroBot.DiscordAdapter"
+if [ -d "$legacy_dir" ]; then
+  mkdir -p "$adapter_dir"
+  if [ -f "$legacy_dir/config.toml" ] && [ ! -f "$adapter_dir/config.toml" ]; then mv "$legacy_dir/config.toml" "$adapter_dir/config.toml"; fi
+  rm -rf "$legacy_dir"
+fi
+if [ -f "$cache_dir/config.toml" ]; then
+  sed 's/"ShiroBot\.DiscordAdapter"/"discord"/' "$cache_dir/config.toml" > "$cache_dir/config.toml.tmp" && mv "$cache_dir/config.toml.tmp" "$cache_dir/config.toml"
+fi
 build_dir="bin/Debug/net11.0"
 manifest="$adapter_dir/.shirobot-dev-files"
 mkdir -p "$adapter_dir"
@@ -87,7 +99,7 @@ cp -R "$build_dir/." "$plugin_dir/"
 (cd "$build_dir" && find . -type f ! -name config.toml | sed 's#^\./##') > "$manifest"
 
 if [ ! -f "$cache_dir/config.toml" ]; then
-  printf 'protocols = ["ShiroBot.DiscordAdapter"]\n\n[api]\nenable = true\nlisten_urls = ["http://127.0.0.1:7002"]\n' > "$cache_dir/config.toml"
+  printf 'protocols = ["discord"]\n\n[api]\nenable = true\nlisten_urls = ["http://127.0.0.1:7002"]\n' > "$cache_dir/config.toml"
 fi
 
 if [ "$prepare_only" = true ]; then

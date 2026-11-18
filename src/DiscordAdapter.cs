@@ -170,14 +170,15 @@ public sealed class DiscordAdapter : IBotAdapter, IConfigurableAdapter, IConfigu
 [ConfigModel]
 public sealed class DiscordAdapterConfig
 {
-    [ConfigField("Discord Bot Token。", Label = "Bot Token", Type = "password", Group = "connection", GroupLabel = "连接", Order = 10)]
+    [ConfigField("在 Discord Developer Portal 的应用 → Bot 页面点击 Reset Token 获得。同一 Token 只运行一个实例。",
+        Label = "Bot Token", Type = "password", Group = "connection", GroupLabel = "连接", GroupOrder = 10, Order = 10)]
     public string BotToken { get; set; } = string.Empty;
 
-    [ConfigField("Gateway intents 位标志；留空使用默认值。需在 Discord Developer Portal 开启 Server Members 和 Message Content intents。",
-        Label = "Gateway Intents", Group = "connection", Min = 0, Order = 20)]
+    [ConfigField("Gateway Intents 位标志；留空订阅除在线状态和输入状态外的全部事件。默认值包含 Server Members 与 Message Content 两个特权 Intent，需在 Developer Portal 的 Bot 页面开启，否则连接会被拒绝（4014）。",
+        Label = "Gateway Intents", Group = "connection", GroupLabel = "连接", GroupOrder = 10, Min = 0, Order = 20)]
     public int? Intents { get; set; }
 
-    [ConfigField("收到交互立即发送延迟回复。关闭后由插件在 3 秒内回复，可使用临时可见回复、弹窗、自动补全和直接更新组件消息。",
-        Label = "自动确认交互", Group = "behavior", GroupLabel = "行为", Order = 30)]
+    [ConfigField("开启时收到交互立即发送延迟回复，插件稍后编辑或追加消息。关闭后由插件在 3 秒内首次回复，可使用临时可见回复、弹窗、自动补全和直接更新组件消息。",
+        Label = "自动确认交互", Group = "behavior", GroupLabel = "行为", GroupOrder = 20, Order = 30)]
     public bool AutoAcknowledgeInteractions { get; set; } = true;
 }

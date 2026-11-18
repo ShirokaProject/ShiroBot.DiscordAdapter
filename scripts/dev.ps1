@@ -44,7 +44,23 @@ if (-not (Test-Path $hostExe) -or $installedVersion -ne $sdkVersion) {
     Set-Content -Path $versionFile -Value $sdkVersion -Encoding ASCII
 }
 
-$adapterDir = Join-Path $cacheDir 'adapters/ShiroBot.DiscordAdapter'
+# The host recognizes a package only when its directory name equals the BotAdapter ID.
+$adapterDir = Join-Path $cacheDir 'adapters/discord'
+# Earlier scripts installed under the project name, which the host does not recognize as a package.
+$legacyDir = Join-Path $cacheDir 'adapters/ShiroBot.DiscordAdapter'
+if (Test-Path -LiteralPath $legacyDir) {
+    New-Item -ItemType Directory -Force $adapterDir | Out-Null
+    $legacyConfig = Join-Path $legacyDir 'config.toml'
+    $newConfig = Join-Path $adapterDir 'config.toml'
+    if ((Test-Path -LiteralPath $legacyConfig) -and -not (Test-Path -LiteralPath $newConfig)) { Move-Item -LiteralPath $legacyConfig $newConfig }
+    Remove-Item -LiteralPath $legacyDir -Recurse -Force
+}
+$coreConfig = Join-Path $cacheDir 'config.toml'
+if (Test-Path -LiteralPath $coreConfig) {
+    $text = Get-Content -LiteralPath $coreConfig -Raw
+    $updated = $text.Replace('"ShiroBot.DiscordAdapter"', '"discord"')
+    if ($updated -ne $text) { Set-Content -LiteralPath $coreConfig -Value $updated -Encoding UTF8 -NoNewline }
+}
 $buildDir = (Resolve-Path 'bin/Debug/net11.0').Path
 $manifest = Join-Path $adapterDir '.shirobot-dev-files'
 New-Item -ItemType Directory -Force $adapterDir | Out-Null
@@ -89,7 +105,7 @@ Get-ChildItem -LiteralPath $buildDir -Recurse -File | Where-Object { $_.Name -ne
 
 $configPath = Join-Path $cacheDir 'config.toml'
 if (-not (Test-Path $configPath)) {
-    Set-Content -Path $configPath -Value "protocols = [`"ShiroBot.DiscordAdapter`"]`n`n[api]`nenable = true`nlisten_urls = [`"http://127.0.0.1:7002`"]" -Encoding UTF8
+    Set-Content -Path $configPath -Value "protocols = [`"discord`"]`n`n[api]`nenable = true`nlisten_urls = [`"http://127.0.0.1:7002`"]" -Encoding UTF8
 }
 
 if ($prepareOnly) {
