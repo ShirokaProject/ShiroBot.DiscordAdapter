@@ -83,7 +83,7 @@
 | IDiscordGuildApi | GET guilds/{id}、users/@me/guilds（分页）、guilds/{id}/channels；频道 POST/PATCH/DELETE 与 permissions 覆盖；roles 增删改；members 查询与 search；成员角色 PUT/DELETE；昵称（含 @me 与清除）；communication_disabled_until 超时（最长 28 天）；移出；bans（分页）；invites；emojis；threads（独立或从消息创建）与 thread-members |
 | IDiscordMessageApi | messages POST/PATCH（multipart 附件、编辑保留已有附件）、crosspost、messages/pins（分页）、bulk-delete、typing、reactions 用户与清除、polls expire 与 answers |
 | IDiscordInteractionApi | callback type 4/5/6/7/8/9、webhooks @original PATCH/DELETE 与 follow-up；applications/{app}/(guilds/{guild}/)commands GET/PUT/POST/DELETE |
-| IDiscordBotApi | users/@me、users/{id}、Gateway op 3 在线状态（随 Identify 重发）、PATCH users/@me（头像转 data URI） |
+| IDiscordClientApi | AccountKind = Bot、上传上限 10 MB；users/@me、users/{id}、Gateway op 3 在线状态（随 Identify 重发）、PATCH users/@me（头像转 data URI） |
 | IDiscordRawApi | 任意路由 + multipart + X-Audit-Log-Reason，Gateway 指令，原始 Dispatch |
 | MessageEvent.Raw | `DiscordMessage`：作者与成员、编辑时间、类型、标志、置顶、Webhook、交互用户、提及角色、子区、原始 JSON |
 | InteractionEvent.Raw | `DiscordInteraction`：命令名/类型/选项（含子命令与 focused）、目标 ID、custom_id、下拉值、弹窗输入（ActionRow 与 Label 组件）、语言、应用权限；移除交互令牌 |

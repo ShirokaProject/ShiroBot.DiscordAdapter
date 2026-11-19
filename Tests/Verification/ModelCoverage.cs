@@ -26,7 +26,7 @@ internal static class ModelCoverage
     public static async Task RunAsync()
     {
         foreach (var contract in new[] { typeof(IDiscordGuildApi), typeof(IDiscordMessageApi), typeof(IDiscordInteractionApi),
-                     typeof(IDiscordBotApi), typeof(IDiscordRawApi) })
+                     typeof(IDiscordClientApi), typeof(IDiscordRawApi) })
             Check(typeof(DiscordModelApi).GetInterfaceMap(contract).TargetMethods.All(m => m.DeclaringType == typeof(DiscordModelApi)),
                 $"DiscordModelApi inherits an unimplemented default member of {contract.Name}.");
 

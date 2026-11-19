@@ -11,7 +11,7 @@ namespace ShiroBot.DiscordAdapter.Services;
 /// <summary>宿主共享 Discord Model 扩展接口的实现，插件无需引用本适配器程序集。</summary>
 public sealed class DiscordModelApi(DiscordRestClient rest, DiscordMapper mapper, DiscordInteractionService? interactions = null,
     Func<DiscordGateway?>? getGateway = null)
-    : IDiscordGuildApi, IDiscordMessageApi, IDiscordInteractionApi, IDiscordBotApi, IDiscordRawApi
+    : IDiscordClientApi, IDiscordGuildApi, IDiscordMessageApi, IDiscordInteractionApi, IDiscordRawApi
 {
     private static string Escape(string value) => Uri.EscapeDataString(value);
 
@@ -403,7 +403,12 @@ public sealed class DiscordModelApi(DiscordRestClient rest, DiscordMapper mapper
     public async Task DeleteCommandAsync(string commandId, string? guildId = null, CancellationToken cancellationToken = default) =>
         await Send(HttpMethod.Delete, $"{await CommandsPathAsync(guildId, cancellationToken)}/{commandId}", null, null, cancellationToken);
 
-    // ─── IDiscordBotApi ───
+    // ─── IDiscordClientApi ───
+
+    public DiscordAccountKind AccountKind => DiscordAccountKind.Bot;
+
+    /// <summary>机器人默认 10 MB；服务器助力等级提高的上限由 Discord 在上传时校验。</summary>
+    public long MaxUploadBytes => 10L * 1024 * 1024;
 
     public string? ApplicationId => mapper.ApplicationId;
 

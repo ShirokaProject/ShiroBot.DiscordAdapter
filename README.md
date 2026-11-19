@@ -40,8 +40,8 @@ Windows 命令行使用 `powershell -ExecutionPolicy Bypass -File scripts/dev.ps
 | --- | --- |
 | `IDiscordGuildApi` | 服务器与频道查询；频道增删改与权限覆盖；角色；成员查询、搜索、角色、昵称、超时、移出；封禁；邀请；表情；子区 |
 | `IDiscordMessageApi` | Embed、按钮、下拉菜单、投票、附件、贴纸、允许提及；编辑（保留已有附件）、公告推送、置顶、批量删除、输入状态、Reaction 用户与清除、投票结束与投票者 |
-| `IDiscordInteractionApi` | 回复（含临时可见）、延迟、更新组件消息、弹窗、自动补全、编辑/删除原回复、后续消息；命令查询、整体注册、单个新增或更新、删除 |
-| `IDiscordBotApi` | 自身资料、用户查询、在线状态与活动（重新登录后保持）、修改用户名和头像 |
+| `IDiscordInteractionApi` | 应用 ID；回复（含临时可见）、延迟、更新组件消息、弹窗、自动补全、编辑/删除原回复、后续消息；命令查询、整体注册、单个新增或更新、删除 |
+| `IDiscordClientApi` | 账号类型（机器人）、上传上限、自身资料、用户查询、在线状态与活动（重新登录后保持）、修改用户名和头像 |
 | `IDiscordRawApi` | 任意 REST 路由（文件上传、审计日志原因）、Gateway 指令、原始 Dispatch，只使用 System.Text.Json 类型 |
 
 `MessageEvent.Raw` 为 `DiscordMessage`，`InteractionEvent.Raw` 为 `DiscordInteraction`（命令选项、下拉值、
