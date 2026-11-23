@@ -127,6 +127,73 @@ public sealed class DiscordMessageService(DiscordRestClient rest, DiscordMapper 
     public async Task DeleteMessageAsync(Sdk.Channel channel, string messageId, CancellationToken cancellationToken = default) =>
         await rest.DeleteAsync($"channels/{await ResolveChannelIdAsync(channel, cancellationToken)}/messages/{messageId}", cancellationToken);
 
+    /// <summary>14 天内的消息按 2–100 条一批调用 bulk-delete，更早的消息（以及只剩一条时）逐条删除。</summary>
+    public async Task DeleteMessagesAsync(Sdk.Channel channel, IReadOnlyList<string> messageIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messageIds);
+        var id = await ResolveChannelIdAsync(channel, cancellationToken);
+        // 留一小时余量，避免请求途中跨过 14 天界线。
+        var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(14) + TimeSpan.FromHours(1);
+        var recent = messageIds.Where(messageId => SnowflakeTime(messageId) > cutoff).ToList();
+        var single = messageIds.Except(recent).ToList();
+        foreach (var chunk in recent.Chunk(100))
+        {
+            if (chunk.Length == 1) { single.Add(chunk[0]); continue; }
+            await rest.PostAsync($"channels/{id}/messages/bulk-delete", new { messages = chunk }, cancellationToken);
+        }
+        foreach (var messageId in single)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await rest.DeleteAsync($"channels/{id}/messages/{messageId}", cancellationToken);
+        }
+    }
+
+    private static DateTimeOffset SnowflakeTime(string id) =>
+        ulong.TryParse(id, out var value)
+            ? DateTimeOffset.FromUnixTimeMilliseconds((long)(value >> 22) + 1420070400000)
+            : throw new ArgumentException($"无效的消息 ID：{id}", nameof(id));
+
+    public async Task EditMessageAsync(Sdk.Channel channel, string messageId, OutgoingMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (message.ReplyTo is not null || message.ReplyToInteraction is not null || message.Segments.OfType<QuoteSegment>().Any())
+            throw new NotSupportedException("编辑消息不能修改引用或交互回复。");
+        var path = $"channels/{await ResolveChannelIdAsync(channel, cancellationToken)}/messages/{messageId}";
+        if (message.Segments.Count == 0)
+        {
+            // 只换按钮：Buttons 为 null 时移除组件。
+            var components = message.Buttons is null ? [] : Prepare(channel, message with { Segments = [new TextSegment(" ")] }).Plan.Components;
+            await rest.PatchAsync(path, new { components }, cancellationToken);
+            return;
+        }
+
+        var (_, plan) = Prepare(channel, message);
+        if (plan.Stickers.Count > 0) throw new NotSupportedException("Discord 不能把消息编辑成贴纸。");
+        var files = new List<ResourceBytes>();
+        foreach (var resource in plan.Files)
+            files.Add(await ResourceReader.ReadAsync(ResolveUploadUri(resource.Uri, channel), resource.FileName, cancellationToken));
+        // message 是编辑后的完整内容：attachments 只列新文件，原有附件随之移除。
+        var payload = new
+        {
+            content = plan.Content, embeds = plan.Embeds, components = plan.Components,
+            attachments = files.Select((file, index) => new { id = index, filename = file.FileName,
+                description = plan.Files[index] is ImageSegment image ? image.Summary : null }).ToArray()
+        };
+        var edited = await rest.SendPayloadAsync<DcMessage>(HttpMethod.Patch, path, payload, files, cancellationToken);
+        foreach (var attachment in edited.Attachments ?? [])
+            mapper.Resources.Set(attachment.Id, (edited.ChannelId, edited.Id, attachment.Url));
+    }
+
+    public async Task PinMessageAsync(Sdk.Channel channel, string messageId, CancellationToken cancellationToken = default) =>
+        await rest.PutAsync($"channels/{await ResolveChannelIdAsync(channel, cancellationToken)}/messages/pins/{messageId}", null, cancellationToken);
+
+    public async Task UnpinMessageAsync(Sdk.Channel channel, string messageId, CancellationToken cancellationToken = default) =>
+        await rest.DeleteAsync($"channels/{await ResolveChannelIdAsync(channel, cancellationToken)}/messages/pins/{messageId}", cancellationToken);
+
+    public async Task SendTypingAsync(Sdk.Channel channel, CancellationToken cancellationToken = default) =>
+        await rest.PostAsync($"channels/{await ResolveChannelIdAsync(channel, cancellationToken)}/typing", null, cancellationToken);
+
     public async Task<MessageEvent?> GetMessageAsync(Sdk.Channel channel, string messageId, CancellationToken cancellationToken = default)
     {
         var id = await ResolveChannelIdAsync(channel, cancellationToken);

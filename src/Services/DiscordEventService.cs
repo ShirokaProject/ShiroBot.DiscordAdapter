@@ -87,11 +87,6 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
         ulong Guild() => guildId ?? throw new JsonException("事件缺少 guild_id。");
         return kind switch
         {
-            DiscordEventKinds.MessageEdited when data.TryGetProperty("id", out _) && channel is not null => new DiscordMessageEdited
-            {
-                GuildId = guildId, Json = data, Channel = channel, MessageId = String(data, "id")!, Message = Message(data),
-                Segments = DiscordMapper.ToSegments(data.Deserialize<DcMessage>(JsonOptions)!)
-            },
             DiscordEventKinds.GuildCreate => new DiscordGuildAvailable
             {
                 GuildId = OptionalId(data, "id"), Json = data, Guild = DiscordModelConverter.Guild(data),
@@ -162,6 +157,19 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
                 mapper.SelfId = data.Deserialize<DcReady>(JsonOptions)!.User.Id;
                 if (data.TryGetProperty("application", out var application)) mapper.ApplicationId = String(application, "id");
                 return null;
+            case "MESSAGE_UPDATE" when data.TryGetProperty("author", out _):
+            {
+                var message = data.Deserialize<DcMessage>(JsonOptions)!;
+                if (message.Author?.Id == mapper.SelfId) return null;
+                var mapped = mapper.ToMessageEvent(message, data.Clone());
+                return new MessageEditedEvent
+                {
+                    Platform = DiscordMapper.PlatformId, SelfId = mapper.SelfId, Raw = mapped.Raw,
+                    MessageId = mapped.MessageId, Channel = mapped.Channel, Sender = mapped.Sender, Member = mapped.Member,
+                    Segments = mapped.Segments,
+                    EditedAt = DateTimeOffset.TryParse(String(data, "edited_timestamp"), out var editedAt) ? editedAt : DateTimeOffset.UtcNow
+                };
+            }
             case "MESSAGE_CREATE":
             {
                 var message = data.Deserialize<DcMessage>(JsonOptions)!;
@@ -202,7 +210,8 @@ public sealed class DiscordEventService(DiscordMapper mapper, Func<DiscordRestCl
             }
             default:
             {
-                var kind = eventName == "MESSAGE_UPDATE" ? DiscordEventKinds.MessageEdited : eventName.ToLowerInvariant();
+                // 只更新 Embed 等的部分 MESSAGE_UPDATE 没有作者和正文，保留为 message_update 平台事件。
+                var kind = eventName.ToLowerInvariant();
                 var channel = String(data, "channel_id") is { } id ? Channel(id, String(data, "guild_id"))
                     : eventName.StartsWith("CHANNEL_", StringComparison.Ordinal) || eventName.StartsWith("THREAD_", StringComparison.Ordinal)
                         ? Channel(String(data, "id")!, String(data, "guild_id")) : null;

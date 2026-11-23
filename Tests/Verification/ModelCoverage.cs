@@ -178,8 +178,12 @@ internal static class ModelCoverage
         await Emit("GUILD_ROLE_DELETE", """{"guild_id":"200","role_id":"300"}""");
         Check(received.Last() is PlatformEvent { Raw: DiscordRoleChanged { RoleId: 300, Role: null } }, "Role delete is wrong.");
         await Emit("MESSAGE_UPDATE", """{"id":"900","channel_id":"100","guild_id":"200","content":"edited","author":{"id":"7","username":"u"},"edited_timestamp":"2026-01-02T00:00:00Z"}""");
-        Check(received.Last() is PlatformEvent { Kind: DiscordEventKinds.MessageEdited, Raw: DiscordMessageEdited
-              { MessageId: "900", Segments: [TextSegment { Text: "edited" }], Message.EditedTimestamp: not null } }, "Message edit payload is wrong.");
+        Check(received.Last() is MessageEditedEvent { MessageId: "900", Sender.Id: "7", Segments: [TextSegment { Text: "edited" }],
+              Raw: DiscordMessage { EditedTimestamp: not null } } edited && edited.EditedAt == DateTimeOffset.Parse("2026-01-02T00:00:00Z"),
+            "Message edit event is wrong.");
+        // 只更新 Embed 的部分更新没有作者，不能当成编辑事件。
+        await Emit("MESSAGE_UPDATE", """{"id":"900","channel_id":"100","guild_id":"200","embeds":[]}""");
+        Check(received.Last() is PlatformEvent { Kind: "message_update" }, "Partial message update must stay a platform event.");
         await Emit("MESSAGE_CREATE", """{"id":"901","channel_id":"100","guild_id":"200","timestamp":"2026-01-01T00:00:00Z","author":{"id":"8","username":"v"},"content":"","embeds":[{"title":"E","fields":[{"name":"n","value":"v","inline":true}]}],"sticker_items":[{"id":"5","name":"s","format_type":4}],"poll":{"question":{"text":"Q"},"answers":[{"answer_id":1,"poll_media":{"text":"Yes"}}],"results":{"is_finalized":false,"answer_counts":[{"id":1,"count":3,"me_voted":false}]}}}""");
         var segments = ((MessageEvent)received.Last()).Segments.OfType<RawSegment>().ToArray();
         Check(segments is [{ Payload: DiscordEmbed { Title: "E", Fields: [{ Inline: true }] } }, { Payload: DiscordSticker { Format: DiscordStickerFormat.Gif } },
@@ -201,7 +205,59 @@ internal static class ModelCoverage
         Check(gateway.Presence?["status"]?.GetValue<string>() == "idle" && gateway.Presence["activities"]![0]!["type"]!.GetValue<int>() == 3,
             "Presence not kept for Identify.");
 
+        await VerifySdkOperationsAsync(rest, mapper, http);
+
         Console.WriteLine("Discord Model 1.1: guild/message/interaction/bot/raw APIs, native segments and typed events verified.");
+    }
+
+    private static string Snowflake(DateTimeOffset time) => ((ulong)(time.ToUnixTimeMilliseconds() - 1420070400000) << 22).ToString();
+
+    /// <summary>SDK ABI 1.5 的通用操作：编辑、批量删除、置顶、输入状态、封禁。</summary>
+    private static async Task VerifySdkOperationsAsync(DiscordRestClient rest, DiscordMapper mapper, Transport http)
+    {
+        var messages = new DiscordMessageService(rest, mapper);
+        var channels = new DiscordChannelService(rest, mapper);
+        var channel = new Channel("100", ChannelType.Group) { GuildId = "200" };
+
+        await messages.EditMessageAsync(channel, "900", new OutgoingMessage
+        {
+            Segments = [new TextSegment("new")],
+            Buttons = new MessageButtonLayout([new MessageButtonRow([new MessageButton("ok", "OK", new CallbackAction("d"))])])
+        });
+        Check(http.Last == "PATCH channels/100/messages/900" && http.PayloadJson?.GetProperty("content").GetString() == "new"
+              && http.PayloadJson?.GetProperty("components")[0].GetProperty("components")[0].GetProperty("label").GetString() == "OK"
+              && http.PayloadJson?.GetProperty("attachments").GetArrayLength() == 0, "Edit request is wrong.");
+
+        await messages.EditMessageAsync(channel, "900", new OutgoingMessage { Segments = [new TextSegment("pic"), new ImageSegment("base64://aGVsbG8=")] });
+        Check(http.Last == "PATCH channels/100/messages/900" && http.Multipart is not null
+              && http.PayloadJson?.GetProperty("attachments").GetArrayLength() == 1, "Edit with a new file did not upload it.");
+
+        await messages.EditMessageAsync(channel, "900", new OutgoingMessage());
+        Check(http.Last == "PATCH channels/100/messages/900" && http.Json.GetProperty("components").GetArrayLength() == 0
+              && !http.Json.TryGetProperty("content", out _), "Removing buttons must only clear components.");
+
+        await Throws<NotSupportedException>(() => messages.EditMessageAsync(channel, "900",
+            new OutgoingMessage { Segments = [new QuoteSegment("1"), new TextSegment("x")] }), "Editing a quote must be refused.");
+
+        var recent = Enumerable.Range(0, 3).Select(i => Snowflake(DateTimeOffset.UtcNow.AddMinutes(-i))).ToArray();
+        var old = Snowflake(DateTimeOffset.UtcNow.AddDays(-30));
+        var start = http.Requests.Count;
+        await messages.DeleteMessagesAsync(channel, [.. recent, old]);
+        var deletes = http.Requests.Skip(start).ToArray();
+        Check(deletes is ["POST channels/100/messages/bulk-delete", var single] && single == $"DELETE channels/100/messages/{old}"
+              && http.Json.GetProperty("messages").GetArrayLength() == 3, "Batch delete must bulk-delete recent messages and delete old ones singly.");
+
+        await messages.PinMessageAsync(channel, "900");
+        Check(http.Last == "PUT channels/100/messages/pins/900", "Pin request is wrong.");
+        await messages.UnpinMessageAsync(channel, "900");
+        Check(http.Last == "DELETE channels/100/messages/pins/900", "Unpin request is wrong.");
+        await messages.SendTypingAsync(channel);
+        Check(http.Last == "POST channels/100/typing", "Typing request is wrong.");
+
+        await channels.BanMemberAsync("100", "7");
+        Check(http.Last == "PUT guilds/200/bans/7", "Ban request is wrong.");
+        await channels.UnbanMemberAsync("100", "7");
+        Check(http.Last == "DELETE guilds/200/bans/7", "Unban request is wrong.");
     }
 
     private sealed class Transport : HttpMessageHandler
@@ -243,11 +299,12 @@ internal static class ModelCoverage
                 "GET guilds/200" => """{"id":"200","name":"G","owner_id":"1","roles":[{"id":"200","permissions":"1024"},{"id":"300","permissions":"32"}]}""",
                 "POST channels/100/messages/900/threads" => """{"id":"400","type":11,"guild_id":"200","parent_id":"100","name":"Topic"}""",
                 "GET applications/@me" => """{"id":"app"}""",
+                "GET channels/100" => """{"id":"100","type":0,"guild_id":"200"}""",
                 "PUT applications/app/guilds/200/commands" => """[{"id":"1","name":"roll","type":1,"description":"Roll","guild_id":"200","version":"2"}]""",
                 "DELETE channels/100/messages/900" => null,
                 _ when request.Method == HttpMethod.Post && path.Contains("/callback") => null,
                 _ when request.Method == HttpMethod.Put || request.Method == HttpMethod.Delete => null,
-                _ => """{"id":"900","channel_id":"100","timestamp":"2026-01-01T00:00:00Z","attachments":[{"id":"1","url":"https://cdn.example/a.png"}]}"""
+                _ => """{"id":"900","channel_id":"100","timestamp":"2026-01-01T00:00:00Z","attachments":[{"id":"1","filename":"a.png","url":"https://cdn.example/a.png"}]}"""
             };
             if (Last.StartsWith("PATCH guilds/200/members", StringComparison.Ordinal)) result = null;
             return result is null

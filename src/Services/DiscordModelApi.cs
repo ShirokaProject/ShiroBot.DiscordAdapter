@@ -270,9 +270,6 @@ public sealed class DiscordModelApi(DiscordRestClient rest, DiscordMapper mapper
             new JsonObject { ["messages"] = new JsonArray(messageIds.Select(id => (JsonNode)id).ToArray()) }, reason, cancellationToken);
     }
 
-    public async Task TriggerTypingAsync(Channel channel, CancellationToken cancellationToken = default) =>
-        await Send(HttpMethod.Post, $"channels/{(await ChannelAsync(channel, cancellationToken)).Id}/typing", null, null, cancellationToken);
-
     public async Task<IReadOnlyList<DiscordUser>> GetReactionUsersAsync(Channel channel, string messageId, string emoji, int limit = 25,
         CancellationToken cancellationToken = default) =>
         (await Get($"channels/{(await ChannelAsync(channel, cancellationToken)).Id}/messages/{messageId}/reactions/{Escape(emoji)}?limit={Math.Clamp(limit, 1, 100)}",

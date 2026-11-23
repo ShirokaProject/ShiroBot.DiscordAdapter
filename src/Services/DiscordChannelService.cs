@@ -92,6 +92,18 @@ public sealed class DiscordChannelService(DiscordRestClient rest, DiscordMapper?
         await rest.DeleteAsync($"guilds/{guildId}/members/{userId}", cancellationToken);
     }
 
+    public async Task BanMemberAsync(string channelId, string userId, CancellationToken cancellationToken = default)
+    {
+        var guildId = await ResolveGuildIdAsync(channelId, cancellationToken);
+        await rest.PutAsync($"guilds/{guildId}/bans/{userId}", new { delete_message_seconds = 0 }, cancellationToken);
+    }
+
+    public async Task UnbanMemberAsync(string channelId, string userId, CancellationToken cancellationToken = default)
+    {
+        var guildId = await ResolveGuildIdAsync(channelId, cancellationToken);
+        await rest.DeleteAsync($"guilds/{guildId}/bans/{userId}", cancellationToken);
+    }
+
     public async Task MuteMemberAsync(string channelId, string userId, TimeSpan duration, CancellationToken cancellationToken = default)
     {
         if (duration < TimeSpan.Zero || duration > TimeSpan.FromDays(28))

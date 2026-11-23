@@ -13,6 +13,10 @@
 | IMessageService.GetMessageCapabilities / AssessMessage | 原生能力及平台限制检查 | 原生能力及平台限制检查 |
 | SendMessageAsync（两种重载） | 文本、Markdown、Card/Embed、提及、资源、引用、按钮、交互回复 | 文本、MarkdownV2、提及、资源、贴纸、引用、按钮、交互回复 |
 | DeleteMessageAsync | REST 删除 | deleteMessage |
+| DeleteMessagesAsync | 14 天内按 2–100 条 bulk-delete，更早的逐条删除 | deleteMessages，每批 100 条 |
+| EditMessageAsync | PATCH 正文、Embed、组件和附件；只给按钮时只改组件 | editMessageText，媒体消息退回 editMessageCaption；新媒体用 editMessageMedia；只给按钮用 editMessageReplyMarkup；内容未变视为成功 |
+| PinMessageAsync / UnpinMessageAsync | PUT / DELETE messages/pins | pinChatMessage / unpinChatMessage |
+| SendTypingAsync | POST typing | sendChatAction typing，保留话题 |
 | GetMessageAsync | REST 查询 | 不支持：Bot API 无此接口 |
 | GetHistoryMessagesAsync | REST 查询，最多 100 条/次 | 不支持：Bot API 无历史查询 |
 | GetResourceUrlAsync | 根据附件来源重新查询临时 URL；也接受 HTTP(S) URL | getFile，支持 file_id、tgfile://、当前实例上传句柄 |
@@ -22,6 +26,7 @@
 | GetMemberAsync | 服务器成员与角色 | getChatMember |
 | SetChannelNameAsync | PATCH channel | setChatTitle；话题使用 editForumTopic |
 | KickMemberAsync | 移除服务器成员 | banChatMember 后 unbanChatMember，允许之后重新加入 |
+| BanMemberAsync / UnbanMemberAsync | PUT / DELETE guilds/{id}/bans | banChatMember / unbanChatMember（only_if_banned） |
 | MuteMemberAsync | Timeout，最长 28 天 | restrictChatMember，有限时长 30 秒至 366 天 |
 | LeaveChannelAsync | 离开所在服务器 | leaveChat |
 | IUserService.GetSelfAsync | /users/@me | getMe |
@@ -61,6 +66,7 @@
 | InteractionEvent / InteractionAcknowledgement | Gateway 交互，自动确认状态 | callback_query，自动确认状态 |
 | InteractionReference | 原交互响应编辑；有过期和会话校验 | 确认点击后在来源会话引用回复；inline 无会话回调不能发送会话回复 |
 | MessageReactionEvent / ReactionEmoji / UnicodeReactionEmoji / PlatformReactionEmoji / ReactionCapabilities | 类型化添加/删除事件及回应 API | 类型化添加/删除/计数事件及回应 API |
+| MessageEditedEvent | 带作者的 MESSAGE_UPDATE；只更新 Embed 的部分更新保留为 message_update 平台事件 | edited_message / edited_channel_post |
 | MessageDeletedEvent | 单条和批量删除 | 普通 Bot API 不发送删除事件；特殊更新保留为 PlatformEvent |
 | MemberJoinedEvent / MemberLeftEvent | 服务器成员事件 | 成员 service message |
 | BotOfflineEvent | 意外断开和连接错误时发布 | 长轮询失败时发布 |
